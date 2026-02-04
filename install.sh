@@ -659,11 +659,12 @@ print_success() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${CYAN}Install directory:${NC} $INSTALL_DIR"
-    echo -e "  ${CYAN}Configuration:${NC}     $ENV_FILE"
     echo ""
     echo -e "  ${YELLOW}To start Memento-S, simply run:${NC}"
     echo ""
-    echo -e "    ${GREEN}memento${NC}"
+    echo -e "    ${GREEN}memento run${NC}"
+    echo ""
+    echo -e "  ${CYAN}On first run, you'll be prompted to configure your LLM API.${NC}"
     echo ""
     echo -e "  ${CYAN}Other commands:${NC}"
     echo -e "    memento doctor   - Check configuration"
@@ -682,7 +683,7 @@ main() {
     check_prerequisites
     setup_repository
     install_dependencies
-    configure_llm
+    # Skip configure_llm here - will be prompted on first 'memento run'
     install_skills
     create_launcher
     print_success
