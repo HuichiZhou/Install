@@ -272,11 +272,13 @@ install_dependencies() {
     local TOTAL_STEPS=6
     local STEP=0
 
-    # Step 1: Create virtual environment with uv
+    # Step 1: Create virtual environment with uv (Python 3.12)
     STEP=$((STEP + 1))
     show_progress "Creating virtual environment..." "$STEP" "$TOTAL_STEPS"
     if [ ! -d ".venv" ]; then
-        uv venv --python 3.12 2>/dev/null || uv venv
+        # Install Python 3.12 if not available, then create venv
+        uv python install 3.12 --quiet 2>/dev/null || true
+        uv venv --python 3.12 || uv venv
     fi
 
     # Step 2: Install core dependencies
