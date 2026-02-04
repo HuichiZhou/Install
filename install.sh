@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Memento-S One-Click Installer
+# Memento-S One-Click Installer (uv version)
 # Usage: curl -sSL https://raw.githubusercontent.com/HuichiZhou/Memento-S/main/install.sh | bash
 #        or: ./install.sh
 #
@@ -31,7 +31,7 @@ print_banner() {
     echo "║   ██║ ╚═╝ ██║███████╗██║ ╚═╝ ██║███████╗██║ ╚████║   ██║   ╚██████╔╝   ║"
     echo "║   ╚═╝     ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝    ║"
     echo "║                           Memento-S                                   ║"
-    echo "║                      One-Click Installer                              ║"
+    echo "║                   One-Click Installer (uv)                            ║"
     echo "║                                                                       ║"
     echo "╚═══════════════════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -60,26 +60,35 @@ check_command() {
     return 0
 }
 
+# Install uv if not present
+install_uv() {
+    if check_command uv; then
+        UV_VERSION=$(uv --version 2>&1)
+        log_success "uv: $UV_VERSION"
+        return 0
+    fi
+
+    log_info "Installing uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # Add to current PATH
+    export PATH="$HOME/.local/bin:$PATH"
+    export PATH="$HOME/.cargo/bin:$PATH"
+
+    if check_command uv; then
+        UV_VERSION=$(uv --version 2>&1)
+        log_success "uv installed: $UV_VERSION"
+        return 0
+    else
+        log_error "Failed to install uv"
+        log_error "Please install manually: curl -LsSf https://astral.sh/uv/install.sh | sh"
+        exit 1
+    fi
+}
+
 # Check prerequisites
 check_prerequisites() {
     log_info "Checking prerequisites..."
-
-    # Check Python
-    if check_command python3; then
-        PYTHON_VERSION=$(python3 --version 2>&1 | cut -d' ' -f2)
-        log_success "Python: $PYTHON_VERSION"
-    else
-        log_error "Python 3 is required. Please install Python 3.10+"
-        exit 1
-    fi
-
-    # Check pip
-    if check_command pip3 || check_command pip; then
-        log_success "pip: installed"
-    else
-        log_error "pip is required. Please install pip"
-        exit 1
-    fi
 
     # Check git
     if check_command git; then
@@ -89,14 +98,8 @@ check_prerequisites() {
         exit 1
     fi
 
-    # Check cmake (needed for llvmlite/numba)
-    if check_command cmake; then
-        CMAKE_VERSION=$(cmake --version 2>&1 | head -n1)
-        log_success "cmake: $CMAKE_VERSION"
-    else
-        log_warn "cmake not found. Installing (required for llvmlite)..."
-        install_cmake
-    fi
+    # Install uv (will also handle Python)
+    install_uv
 
     # Load nvm if available
     export NVM_DIR="$HOME/.nvm"
@@ -127,52 +130,6 @@ check_prerequisites() {
     else
         log_info "openskills not found. Installing..."
         install_openskills
-    fi
-}
-
-# Install cmake (needed for llvmlite/numba)
-install_cmake() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        # macOS
-        if check_command brew; then
-            log_info "Installing cmake via Homebrew..."
-            brew install cmake
-        else
-            log_error "Homebrew not found. Please install cmake manually:"
-            log_error "  brew install cmake"
-            log_error "  or visit: https://cmake.org/download/"
-            exit 1
-        fi
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        # Linux
-        if check_command apt-get; then
-            log_info "Installing cmake via apt..."
-            sudo apt-get update && sudo apt-get install -y cmake
-        elif check_command yum; then
-            log_info "Installing cmake via yum..."
-            sudo yum install -y cmake
-        elif check_command dnf; then
-            log_info "Installing cmake via dnf..."
-            sudo dnf install -y cmake
-        elif check_command pacman; then
-            log_info "Installing cmake via pacman..."
-            sudo pacman -S --noconfirm cmake
-        else
-            log_error "Could not detect package manager. Please install cmake manually:"
-            log_error "  Visit: https://cmake.org/download/"
-            exit 1
-        fi
-    else
-        log_error "Unsupported OS. Please install cmake manually:"
-        log_error "  Visit: https://cmake.org/download/"
-        exit 1
-    fi
-
-    if check_command cmake; then
-        log_success "cmake installed successfully"
-    else
-        log_error "Failed to install cmake"
-        exit 1
     fi
 }
 
@@ -278,7 +235,6 @@ setup_repository() {
 }
 
 # Progress bar helper
-# Usage: show_progress "Task name" current total
 show_progress() {
     local task="$1"
     local current="$2"
@@ -302,210 +258,65 @@ show_progress() {
     fi
 }
 
-# Install a package with progress update
-install_with_progress() {
-    local pkg="$1"
-    local current="$2"
-    local total="$3"
-    local extra_args="${4:-}"
-
-    show_progress "$pkg" "$current" "$total"
-    if [ -n "$extra_args" ]; then
-        pip install $extra_args "$pkg" -q 2>/dev/null || pip install "$pkg" -q
-    else
-        pip install "$pkg" -q
-    fi
-}
-
-# Install Python dependencies
+# Install Python dependencies using uv
 install_dependencies() {
     echo ""
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                Installing Dependencies                        ${NC}"
+    echo -e "${CYAN}            Installing Dependencies (using uv)                 ${NC}"
     echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
 
     cd "$INSTALL_DIR"
 
-    # Create virtual environment if not exists
-    if [ ! -d "venv" ]; then
-        log_info "Creating virtual environment..."
-        python3 -m venv venv
-    fi
-
-    # Activate virtual environment
-    source venv/bin/activate
-
     # Define installation steps
-    local TOTAL_STEPS=8
+    local TOTAL_STEPS=6
     local STEP=0
 
-    # Step 1: Upgrade pip
+    # Step 1: Create virtual environment with uv
     STEP=$((STEP + 1))
-    show_progress "Upgrading pip..." "$STEP" "$TOTAL_STEPS"
-    pip install --upgrade pip setuptools wheel -q
-
-    # Step 2: Check Python version for tiktoken compatibility
-    PYTHON_MAJOR=$(python3 -c "import sys; print(sys.version_info.major)")
-    PYTHON_MINOR=$(python3 -c "import sys; print(sys.version_info.minor)")
-
-    if [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -ge 13 ]; then
-        export PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
+    show_progress "Creating virtual environment..." "$STEP" "$TOTAL_STEPS"
+    if [ ! -d ".venv" ]; then
+        uv venv --python 3.12 2>/dev/null || uv venv
     fi
 
-    # Step 3: Install tiktoken
-    STEP=$((STEP + 1))
-    show_progress "Installing tiktoken..." "$STEP" "$TOTAL_STEPS"
-    pip install tiktoken --only-binary=:all: -q 2>/dev/null || {
-        if command -v rustc &> /dev/null; then
-            pip install tiktoken -q || {
-                log_error "Failed to install tiktoken. Try using Python 3.12 instead."
-                exit 1
-            }
-        else
-            log_error "tiktoken requires Rust compiler for Python 3.13+"
-            log_error "Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
-            exit 1
-        fi
-    }
-
-    # Step 4: Install core dependencies
+    # Step 2: Install core dependencies
     STEP=$((STEP + 1))
     show_progress "Installing core packages..." "$STEP" "$TOTAL_STEPS"
-    pip install textual typer rich pydantic pydantic-settings python-dotenv watchdog -q
+    uv pip install textual typer rich pydantic pydantic-settings python-dotenv watchdog --quiet
 
-    # Step 5: Install LLM packages
+    # Step 3: Install LLM packages
     STEP=$((STEP + 1))
     show_progress "Installing LLM packages..." "$STEP" "$TOTAL_STEPS"
-    pip install anthropic openai litellm mcp -q
+    uv pip install anthropic openai litellm mcp tiktoken --quiet
 
-    # Step 6: Install web & async packages
+    # Step 4: Install web & async packages
     STEP=$((STEP + 1))
     show_progress "Installing web packages..." "$STEP" "$TOTAL_STEPS"
-    pip install httpx aiohttp requests aiofiles anyio pyyaml google_search_results -q
+    uv pip install httpx aiohttp requests aiofiles anyio pyyaml google_search_results --quiet
 
-    # Step 7: Install crawl4ai
+    # Step 5: Install crawl4ai and camel-ai
     STEP=$((STEP + 1))
     show_progress "Installing crawl4ai..." "$STEP" "$TOTAL_STEPS"
-    pip install crawl4ai -q
+    uv pip install crawl4ai camel-ai --quiet
 
-    # Step 8: Setup crawl4ai and playwright
+    # Step 6: Setup playwright browsers
     STEP=$((STEP + 1))
     show_progress "Setting up browser (chromium)..." "$STEP" "$TOTAL_STEPS"
+
+    # Activate venv and run setup commands
+    source .venv/bin/activate
 
     # Run crawl4ai setup
     crawl4ai-setup -q 2>/dev/null || true
 
-    # Install playwright chromium with dependencies
-    python -m playwright install --with-deps chromium 2>/dev/null || {
+    # Install playwright chromium
+    python -m playwright install chromium 2>/dev/null || {
         log_warn "Playwright chromium installation may need manual setup"
-        log_warn "Run: python -m playwright install --with-deps chromium"
+        log_warn "Run: source .venv/bin/activate && python -m playwright install chromium"
     }
 
     echo ""
     log_success "All dependencies installed successfully!"
-}
-
-# Configure LLM settings
-configure_llm() {
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}                    LLM Configuration                          ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo ""
-
-    # Check if .env already exists
-    if [ -f "$ENV_FILE" ]; then
-        echo -e "${YELLOW}Existing configuration found at $ENV_FILE${NC}"
-        read -p "Do you want to reconfigure? [y/N]: " RECONFIG
-        if [[ ! "$RECONFIG" =~ ^[Yy]$ ]]; then
-            log_info "Keeping existing configuration"
-            return
-        fi
-    fi
-
-    # Choose LLM API
-    echo ""
-    echo "Select your LLM API provider:"
-    echo "  1) Anthropic (Claude API)"
-    echo "  2) OpenRouter"
-    echo "  3) Custom OpenAI-compatible API"
-    echo ""
-    read -p "Enter choice [1-3]: " LLM_CHOICE
-
-    case $LLM_CHOICE in
-        1)
-            LLM_API="anthropic"
-            echo ""
-            read -p "Enter your Anthropic API Key: " API_KEY
-            read -p "Enter model name [claude-3-5-sonnet-20241022]: " MODEL_NAME
-            MODEL_NAME=${MODEL_NAME:-claude-3-5-sonnet-20241022}
-            BASE_URL="https://api.anthropic.com"
-            ;;
-        2)
-            LLM_API="openrouter"
-            echo ""
-            read -p "Enter your OpenRouter API Key: " API_KEY
-            read -p "Enter model name [anthropic/claude-3.5-sonnet]: " MODEL_NAME
-            MODEL_NAME=${MODEL_NAME:-anthropic/claude-3.5-sonnet}
-            BASE_URL="https://openrouter.ai/api/v1"
-            ;;
-        3)
-            LLM_API="openai"
-            echo ""
-            read -p "Enter your API Key: " API_KEY
-            read -p "Enter Base URL: " BASE_URL
-            read -p "Enter model name: " MODEL_NAME
-            ;;
-        *)
-            log_error "Invalid choice"
-            exit 1
-            ;;
-    esac
-
-    # Write .env file
-    cat > "$ENV_FILE" << EOF
-# Memento-S LLM Configuration
-# Generated by install.sh
-
-LLM_API=$LLM_API
-CLAUDE_API_KEY=$API_KEY
-CLAUDE_BASE_URL=$BASE_URL
-CLAUDE_MODEL=$MODEL_NAME
-CLAUDE_MAX_TOKENS=100000
-CLAUDE_TIMEOUT=120
-
-# Context management
-CONTEXT_MAX_TOKENS=80000
-CONTEXT_COMPRESS_THRESHOLD=60000
-SUMMARY_MAX_TOKENS=2000
-
-# Workspace
-WORKSPACE_DIR=./workspace
-SKILLS_DIR=./skills
-EOF
-
-    # Configure SERPAPI (optional)
-    echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}              SerpAPI Configuration (Optional)                 ${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo "SerpAPI is used for web search functionality."
-    echo "You can get an API key at: https://serpapi.com/"
-    echo ""
-    read -p "Enter your SerpAPI API Key (or press Enter to skip): " SERPAPI_KEY
-
-    if [ -n "$SERPAPI_KEY" ]; then
-        echo "" >> "$ENV_FILE"
-        echo "# SerpAPI for web search" >> "$ENV_FILE"
-        echo "SERPAPI_API_KEY=$SERPAPI_KEY" >> "$ENV_FILE"
-        log_success "SerpAPI key configured"
-    else
-        log_info "Skipping SerpAPI configuration (web search will be disabled)"
-    fi
-
-    log_success "Configuration saved to $ENV_FILE"
 }
 
 # Install skills
@@ -561,7 +372,7 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 
 cd "$SCRIPT_DIR"
-source venv/bin/activate
+source .venv/bin/activate
 
 # Default to 'run' if no arguments provided
 if [ $# -eq 0 ]; then
@@ -659,6 +470,7 @@ print_success() {
     echo -e "${GREEN}═══════════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "  ${CYAN}Install directory:${NC} $INSTALL_DIR"
+    echo -e "  ${CYAN}Python environment:${NC} $INSTALL_DIR/.venv (managed by uv)"
     echo ""
     echo -e "  ${YELLOW}To start Memento-S, simply run:${NC}"
     echo ""
@@ -683,7 +495,6 @@ main() {
     check_prerequisites
     setup_repository
     install_dependencies
-    # Skip configure_llm here - will be prompted on first 'memento run'
     install_skills
     create_launcher
     print_success
