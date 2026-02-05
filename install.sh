@@ -112,10 +112,12 @@ install_dependencies() {
 
     log_success "Dependencies installed!"
 
-    # Setup playwright/crawl4ai (optional, may fail)
-    log_info "Setting up browser support..."
-    uv run crawl4ai-setup -q 2>/dev/null || log_warn "crawl4ai setup skipped"
-    uv run python -m playwright install chromium 2>/dev/null || log_warn "Playwright setup skipped (can install later)"
+    # Setup playwright/crawl4ai (optional)
+    log_info "Setting up crawl4ai browser support..."
+    uv run crawl4ai-setup 2>&1 | tail -5 || true
+    log_info "Setting up Playwright chromium..."
+    uv run python -m playwright install chromium 2>&1 | tail -5 || true
+    log_success "Browser support setup completed"
 }
 
 # Install openskills and skills
